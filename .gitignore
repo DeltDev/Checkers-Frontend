@@ -22,3 +22,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+API_WIRING_PSEUDOCODE.txt
+API_WIRING_PSEUDOCODE_3D.txt
