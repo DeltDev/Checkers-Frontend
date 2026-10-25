@@ -1,0 +1,274 @@
+CHECKERS FRONTEND <-> BACKEND WIRING - PSEUDOCODE (TYPED)
+==========================================================
+Companion to: C:\Users\Lenovo\Desktop\Checkers-Backend\IMPLEMENTATION_PLAN.txt
+(phases 8-9 and section 2) and "phases 6 to 11 changes.txt" (decisions D1-D9,
+archived next to it on the Desktop).
+3D companion: API_WIRING_PSEUDOCODE_3D.txt (same api/ + state/, different
+Babylon layer - read this file first).
+Scope: 2D UI FIRST. Babylon.js renders the board top-down (orthographic).
+The later 3D upgrade swaps the camera and the meshes ONLY - no API change,
+no state change, no component change.
+Style: language-neutral pseudocode on purpose - NOT TypeScript.
+
+--------------------------------------------------------------------
+0. STACK AND CONVENTIONS
+--------------------------------------------------------------------
+  Vite 8 + React 19 (TypeScript, react-compiler enabled)
+  @babylonjs/core 9.x       - scene, camera, meshes, picking
+  animejs 4.x               - tweening (captures, promotions, camera easing)
+  pnpm                      - package manager (pnpm-lock.yaml)
+
+  JSON: camelCase property names, enums as STRINGS ("White", "Ongoing",
+        "Capture") - the backend runs JsonStringEnumConverter (D8/D3).
+  Dev  : Vite dev server proxies /api and /health to
+         http://127.0.0.1:5199  => no CORS, no origin juggling (D9).
+  Prod : same-origin, or VITE_API_BASE_URL when the API is on another host.
+  Backend phase 6-9 code is currently REVERTED to stubs: endpoints throw
+  NotImplementedException until it is restored. The contract below is the
+  planned one and does not change when it comes back.
+
+--------------------------------------------------------------------
+1. TYPE NOTATION / TYPE CATALOGUE (the wire contract)
+--------------------------------------------------------------------
+  Type names mirror Checkers/Contracts exactly. Anything the client needs
+  is declared ONCE in src/api/types.ts - no inline object shapes anywhere.
+
+  PieceColor   = "White" | "Black"
+  GameStatus   = "Ongoing" | "WhiteWon" | "BlackWon" | "Draw"
+  MoveType     = "Quiet" | "Capture"
+  PieceType    = "Man" | "King"
+
+  Position     { row: int, col: int }                # 0..9, row 0 = top
+  Player       { id: int, name: string, color: PieceColor }
+  Square       { position: Position, number: string?   # "Square1".."Square50", null on light
+                 isDark: bool,
+                 occupantId: int?, occupantColor: PieceColor?,
+                 occupantType: PieceType? }          # the trio is never half-set
+  Move         { from: Position, to: Position, path: Position[],
+                 capturedPieceIds: int[], type: MoveType,
+                 color: PieceColor, notation: string }
+  GameState    { gameId: string, turn: int (1-based), turnColor: PieceColor,
+                 status: GameStatus, winnerId: int?,
+                 players: Player[2], squares: Square[100], history: Move[] }
+  LegalMoves   { moves: Move[] }
+  ActionResult { success: bool, message: string?, status: GameStatus }
+  ApiErrorBody { message: string }
+
+  Requests:
+    CreateGame  { whitePlayerName?: string, blackPlayerName?: string }
+    MoveCmd     { playerId: int, from: Position, to: Position, path?: Position[] }
+    PlayerCmd   { playerId: int }                   # draw + resign share this
+
+  ApiError { status: int, message: string, body: unknown }   # client-side
+
+  Square index: squares[] is FLATTENED ROW BY ROW -> index = row * 10 + col.
+  Reverse: row = index / 10 (int), col = index % 10. Never assume order
+  beyond that, and always key React lists by position/index, never by array
+  order of history for board state.
+
+--------------------------------------------------------------------
+2. LAYERS AND DATA FLOW
+--------------------------------------------------------------------
+  +-------------+     +-----------------+     +------------------------+
+  |  api/       | --> |  state/         | --> |  board/  (Babylon)     |
+  |  HTTP only  |     |  one game store |     |  scene, meshes, picking|
+  +-------------+     +-----------------+     +------------------------+
+                            |       ^
+                            v       | cell clicked / tween finished
+                      +------------------------+
+                      |  components/ (React DOM)|
+                      |  HUD, move log, dialogs |
+                      +------------------------+
+
+  RULES
+  R1  Only src/api/ touches fetch(). Components and the scene never call it.
+  R2  Only src/state/ owns game data. React reads it, Babylon renders it.
+  R3  The scene is written from state, never mutated by state: after every
+      store change the scene re-applies the FULL state (diff-free, 100
+      squares + 40 pieces is cheap). Rebuilding meshes from scratch is
+      allowed only on game change / first load.
+  R4  Mutations return ActionResult ONLY (no state!) - so every successful
+      mutation is followed by GET state + GET legal moves. The `turn`
+      counter doubles as a staleness guard: drop a response whose turn is
+      older than the one already rendered.
+  R5  One game id <-> one store instance. Creating a new game discards it.
+
+--------------------------------------------------------------------
+3. ENDPOINT TABLE (planned backend contract)
+--------------------------------------------------------------------
+  #  METHOD  PATH                        REQUEST            2xx
+  1  GET     /health                     -                  "ok" (liveness gate)
+  2  POST    /api/games                  CreateGame         201 + Location: /api/games/{gameId},
+                                                             body GameState (GameId set)
+  3  GET     /api/games/{gameId}         -                  200 GameState
+  4  GET     /api/games/{gameId}/moves   ?playerId=N        200 LegalMoves
+  5  POST    /api/games/{gameId}/moves   MoveCmd            200 ActionResult{success:true,status}
+  6  POST    /api/games/{gameId}/draw    PlayerCmd          200 ActionResult (success may be false!)
+  7  POST    /api/games/{gameId}/resign  PlayerCmd          200 ActionResult
+
+  FAILURE MAP (client handling)
+  400 {message}   missing playerId query / bad body      -> inline form error
+  404 {message}   game or player not found               -> banner + "new game"
+  409 ActionResult{success:false,message,status}         -> toast; state is
+              wrong turn | illegal move | game finished    authoritative, re-GET
+  500 {message}   unexpected                             -> toast + retry affordance
+  network/timeout                                          -> toast, keep last state
+
+  NOTE on #6: a REJECTED draw offer is HTTP 200 with success=false (D5), not a
+  4xx. Never branch on the status code alone for draw - read `success`.
+
+--------------------------------------------------------------------
+4. METHOD LIST (src/api)
+--------------------------------------------------------------------
+FUNCTION Request(path: string, init?: RequestInit) RETURNS Promise<T>
+    url   <- (import.meta.env.VITE_API_BASE_URL ?? "") + path
+    response <- fetch(url, { headers: { Accept: "application/json",
+                                        Content-Type: "application/json" },
+                             ...init })
+    IF network error -> THROW ApiError(status: 0, "network error")
+    text <- await response.text()
+    IF !response.ok:
+        message <- parse json.message ?? text
+        THROW ApiError(status: response.status, message, body: text)
+    RETURN text == "" ? undefined : JSON.parse(text)
+
+FUNCTION CreateGame(request: CreateGame)      RETURNS Promise<GameState>
+FUNCTION GetGame(gameId: string)              RETURNS Promise<GameState>
+FUNCTION GetLegalMoves(gameId, playerId)      RETURNS Promise<LegalMoves>
+FUNCTION MakeMove(gameId, cmd: MoveCmd)       RETURNS Promise<ActionResult>
+FUNCTION OfferDraw(gameId, cmd: PlayerCmd)    RETURNS Promise<ActionResult>
+FUNCTION Resign(gameId, cmd: PlayerCmd)       RETURNS Promise<ActionResult>
+    # thin wrappers over Request(); the JSON.stringify body, camelCase and
+    # error unwrapping live ONLY in Request().
+
+--------------------------------------------------------------------
+5. METHOD LIST (src/state - one store per game)
+--------------------------------------------------------------------
+Store shape:
+  { phase: "idle" | "loading" | "ready" | "error",
+    gameId: string?, state: GameState?, legalMoves: Move[],
+    selected: Position?, lastError: ApiError?, busy: bool }
+
+FUNCTION UseGameStore() RETURNS Store
+FUNCTION CreateGame(names) RETURNS void       # POST -> set store from 201 body
+FUNCTION LoadGame(gameId)  RETURNS void       # GET state, then legal moves
+FUNCTION SelectSquare(pos) RETURNS void
+    # 1. if a piece of turnColor sits on pos AND it has legal moves ->
+    #      selected = pos (highlight targets from legalMoves where from == pos)
+    # 2. else if pos is a highlighted target -> PlayMove(target)
+    # 3. else -> selected = null (deselect)
+FUNCTION PlayMove(target: Move) RETURNS void  # POST MoveCmd with the CANONICAL
+                                               # from/to/path from legalMoves -
+                                               # never a path the client invented
+                                               # (plan section 2: never trust
+                                               # client capture data)
+    on success -> refresh: GetGame + GetLegalMoves, clear selection
+    on ApiError -> set lastError, keep selection, do NOT refresh (state unchanged)
+FUNCTION OfferDraw() / Resign() RETURNS void  # PlayerCmd; on success refresh
+FUNCTION Refresh() RETURNS void               # GetGame + GetLegalMoves in parallel
+    # called after EVERY successful mutation (rule R4) and on window focus
+
+Derived selectors (pure):
+  LegalMovesFrom(pos)     = legalMoves.filter(m -> m.from == pos)
+  IsPlayersTurn(id)       = state.status == "Ongoing" && state.turnColor == colorOf(id)
+  PieceAt(pos)            = state.squares[row*10+col].occupant*
+
+--------------------------------------------------------------------
+6. INTERACTION FLOWS
+--------------------------------------------------------------------
+(a) START
+    mount -> GET /health (gate; show "API offline" banner on failure)
+          -> POST /api/games { whitePlayerName, blackPlayerName }
+          -> store from 201 body -> Refresh() -> board built from squares
+(b) MOVE
+    pointerdown cell -> SelectSquare
+      selected && legal target -> POST /moves {playerId, from, to, path}
+        200 success -> Refresh() -> scene re-applies state (tween piece,
+                       fade captured pieces out, then re-render)
+        409 -> toast(message); store unchanged; keep board as-is
+(c) TERMINAL
+    state.status != "Ongoing" -> HUD shows status + winner name;
+      disable pointer input; offer "New game" -> back to (a)
+      Resign on a finished game -> 409 "game already finished" (plan D6)
+(d) RECONNECT / RELOAD
+    gameId kept in the URL (?game=...) -> LoadGame(gameId) on boot; 404 ->
+    banner "game not found" + New game.
+
+--------------------------------------------------------------------
+7. 2D SCENE SPEC (src/board) - 2D FIRST
+--------------------------------------------------------------------
+  Camera   : FreeCamera ABOVE the board looking down,
+             camera.mode = ORTHOGRAPHIC_CAMERA,
+             orthoLeft/Right/Top/Bottom sized from the canvas aspect so the
+             10x10 board always fits with padding.
+  World    : 1 unit = 1 cell. X = col, Z = row, Y = 0 (flat).
+             origin at board centre:  x = col - 4.5,  z = row - 4.5
+             (row 0 at the TOP of the screen => +z maps downward on screen,
+              which the top-down camera gives for free.)
+  Light    : single HemisphericLight; 2D needs no shadows.
+  Meshes   : ONE ground plane + 100 quads (or a single merged plane with a
+             checker texture) tagged in mesh.metadata.cell = {row,col}
+             ONE disc/box per piece, metadata.pieceId + metadata.cell
+  Picking  : scene.onPointerObservable(POINTERDOWN) ->
+             pickInfo.pickedMesh.metadata.cell -> SelectSquare(cell)
+  Apply    : ApplyState(state, legalMoves, selected) repositions/creates/
+             disposes piece meshes, tints selected square + legal targets
+  3D LATER : same ApplyState; swap camera to ArcRotateCamera perspective,
+             lift pieces to y>0, scale meshes - API/state untouched.
+
+--------------------------------------------------------------------
+8. WORKED EXAMPLES / VERIFICATION SPOTS
+--------------------------------------------------------------------
+A) Create + first move, exact traffic
+   POST /api/games {"whitePlayerName":"Ada","blackPlayerName":"Grace"}
+     -> 201 {"gameId":"TN-JcJONJ1Ph","turn":1,"turnColor":"White",
+             "status":"Ongoing","winnerId":null,"players":[...],
+             "squares":[100],"history":[]}
+   GET  /api/games/TN-JcJONJ1Ph/moves?playerId=1 -> {"moves":[...]}
+   POST /api/games/TN-JcJONJ1Ph/moves
+        {"playerId":1,"from":{"row":6,"col":1},"to":{"row":5,"col":0},
+         "path":null}                       -> {"success":true,"status":"Ongoing"}
+   GET  /api/games/TN-JcJONJ1Ph             -> turn 2, turnColor "Black",
+                                               history length 1
+B) Rejection (409) - the UI must not optimistically move the piece
+   POST .../moves {"playerId":1, ...} while turnColor == "Black"
+     -> 409 {"success":false,"message":"not this player's turn","status":"Ongoing"}
+   assert: board unchanged, toast shows the server message, store still valid
+C) Terminal
+   POST .../resign {"playerId":2} -> {"success":true,"status":"WhiteWon"}
+   then GET state -> winnerId == 1, status "WhiteWon";
+   every further POST /moves -> 409 "game is finished"
+
+--------------------------------------------------------------------
+9. SCAFFOLD MAP (what exists now vs what is TODO)
+--------------------------------------------------------------------
+  src/api/types.ts        DONE   - wire contract, single source of truth
+  src/api/client.ts       DONE   - Request(), ApiError, base URL, JSON
+  src/api/endpoints.ts    DONE   - the 7 thin endpoint functions
+  src/config.ts           DONE   - base URL + dev proxy constant
+  src/state/gameStore.ts  SKELETON - shape + selectors DONE, actions TODO
+  src/board/layout.ts     SKELETON - cell<->world math DONE, TODO: orientation
+  src/board/boardScene.ts SKELETON - engine/scene/ortho camera DONE,
+                                     pick-forwarding DONE (inert until the
+                                     board exists), TODO: buildBoardMeshes,
+                                     ApplyState
+  src/components/BoardCanvas.tsx  SKELETON - canvas + scene lifecycle
+                                    TODO: forward picks to the store
+  src/components/GameHud.tsx      SKELETON - status/turn/winner/buttons
+  src/components/MoveLog.tsx      SKELETON - history list
+  src/App.tsx                    SKELETON - composes the above
+  vite.config.ts                 DONE   - /api + /health proxy -> :5199
+
+--------------------------------------------------------------------
+10. SELF-CHECK (done when)
+--------------------------------------------------------------------
+[ ] pnpm build passes (tsc -b && vite build), pnpm lint clean
+[ ] API offline at boot -> banner, no crash, no unhandled rejection
+[ ] Create game -> board renders 100 squares, 20+20 pieces, White to move
+[ ] Click own piece -> only its legal targets highlight (mandatory capture
+    respected because targets come from GET /moves, never computed client-side)
+[ ] Click target -> POST, board updates only after the refetch
+[ ] Wrong-turn / illegal / finished -> 409 toast, board unchanged
+[ ] Draw offer rejected -> still HTTP 200, success=false shown as a toast
+[ ] Terminal status -> input disabled, winner shown, New game works
+[ ] Two tabs with the same game id stay consistent after refresh (R4)

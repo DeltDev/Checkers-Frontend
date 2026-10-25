@@ -1,0 +1,189 @@
+CHECKERS FRONTEND <-> BACKEND WIRING - 3D PSEUDOCODE (TYPED)
+=============================================================
+Companion to:
+  API_WIRING_PSEUDOCODE.txt          - the 2D-first plan (READ THAT FIRST)
+  C:\Users\Lenovo\Desktop\Checkers-Backend\IMPLEMENTATION_PLAN.txt  (phases 8-9)
+  "phases 6 to 11 changes.txt"       - decisions D1-D9 (archived on Desktop)
+
+WHAT THIS FILE IS
+  The same wiring, the same endpoints, the same store - only the Babylon
+  layer changes. 2D and 3D are two scenes behind ONE store; the API layer
+  (src/api) and the state layer (src/state) are literally shared, not copied.
+  Style: language-neutral pseudocode - NOT TypeScript.
+
+  +-------------+     +-----------------+     +--------------------------+
+  |  api/       | --> |  state/         | --> |  board/   (2D)  OR       |
+  |  (shared)   |     |  (shared)       |     |  board3d/ (3D)  <-- HERE |
+  +-------------+     +-----------------+     +--------------------------+
+                            |       ^                  ^
+                            v       |                  | SAME contract:
+                      +------------------------+       | (state, selected,
+                      |  components/ (shared)  |       |  onCellPicked)
+                      +------------------------+
+  RULES R1-R5 from the 2D file apply unchanged.
+
+--------------------------------------------------------------------
+0. WHAT IS SHARED vs WHAT IS 3D-ONLY
+--------------------------------------------------------------------
+  SHARED, untouched by the 3D work:
+    src/api/*            DTOs, fetch wrapper, the 7 endpoint functions
+    src/state/*          store shape, selectors, action TODOs
+    src/components/GameHud.tsx, MoveLog.tsx, BoardCanvas.tsx (2D)
+    src/board/layout.ts  cell<->world mapping (X = col, Z = row, 1 unit/cell)
+                         - 3D REUSES it and only adds a Y axis
+    vite.config.ts proxy, config.ts
+
+  3D-ONLY (scaffolded in src/board3d/ + src/components/BoardCanvas3d.tsx):
+    scene, camera, lights, board slab, piece meshes, materials,
+    animations, hover/highlight meshes, 3D picking.
+
+  The single seam between the worlds is the handle contract:
+      BoardSceneHandle { scene, applyState(state, selected), dispose() }
+  BoardCanvas.tsx (2D) and BoardCanvas3d.tsx (3D) both consume it, so the
+  App can swap views without touching a single line of API or store code.
+
+--------------------------------------------------------------------
+1. 3D SCENE SPEC (src/board3d/boardScene3d.ts)
+--------------------------------------------------------------------
+  UNITS   : 1 world unit = 1 cell, same as 2D. Board is 10x10 at y = 0
+            (board top face), pieces sit ON it (y > 0), row 0 still "north".
+  COORDS  : x = col - 4.5,  z = row - 4.5   (from layout.cellToWorld)
+            y = 0 top of board, +y = up. Piece height is the ONLY new axis.
+
+  CAMERA  : ArcRotateCamera
+              target   = (0, 0, 0)        # board centre
+              alpha    = -PI/2            # facing "north" by default
+              beta     = 0.9              # ~52 deg from straight down
+              radius   = 14               # whole board in frame
+            limits: beta   in [0.15, 1.35]  - never under the board, never flat
+                    radius in [10, 26]      - board always visible
+                    panning disabled (or clamped to the board bounds)
+            input: attachControl() - wheel zoom, drag orbit.
+            -> Reuse the SAME perspective the 2D ortho view implied:
+               row 0 at the top of the screen when alpha = -PI/2.
+
+  LIGHTS  : HemisphericLight (sky #cfd8ea / ground #40465a, intensity ~0.65)
+            + DirectionalLight from the north-west for shadows
+            TODO(shadows): ShadowGenerator on the board slab; 40 casters is
+            trivial. Optional: scene.environmentTexture for PBR highlights
+            (needs an asset - keep StandardMaterial until one exists).
+
+  BOARD   : one slab box (10 x 0.4 x 10) + 100 thin tile boxes on top
+            (1 x 0.05 x 1), alternating light/dark material, each tile tagged
+            mesh.metadata.cell = { row, col }.
+            -> tiles are separate meshes ON PURPOSE: picking resolves to a
+               cell, and highlight = tile.material emissiveColor (no texture
+               work, no UV math).
+
+  PIECES  : MAN  = flattened cylinder  (diameter 0.8, height 0.22) - a disc
+            KING = man + a gold torus ring on top (or a second disc), so
+            promotion is "add/remove a ring", never a mesh swap
+            colors: white = #f4efe2, black = #23262e, rim accent per side
+            each piece mesh tagged mesh.metadata.pieceId (reconcile key!)
+
+  PICKING : scene.onPointerObservable
+              POINTERDOWN -> pickedMesh.metadata.cell -> onCellPicked(cell)
+                             (tile OR piece: both carry cell - pieces carry
+                              it too, so clicking a piece selects its square)
+              POINTERMOVE -> hover: tint the cell under the cursor
+                             (reset the previous tile's emissive first)
+            Select/target highlights live in applyState():
+              selected tile  -> emissive tint
+              legal targets  -> emissive tint (from store.legalMoves - the
+                                scene NEVER derives legality itself)
+
+--------------------------------------------------------------------
+2. RECONCILE + ANIMATE (applyState in 3D)
+--------------------------------------------------------------------
+  Function ApplyState(state, selected) RETURNS void
+      # Rule R3 holds: full state in, meshes out, no game logic here.
+      # 3D adds motion, so reconcile BEFORE animating:
+
+      IF state == null: dispose all piece meshes; return
+      IF state.gameId != builtForGameId:
+            rebuild board + all pieces from scratch (meshesById.clear())
+            # never animate the first paint or a game switch
+
+      seen : Set<pieceId>
+      FOR each square in state.squares WHERE occupantId != null:
+          seen ADD occupantId
+          mesh <- meshesById[occupantId] OR createPieceMesh(occupant)
+          mesh.metadata.cell <- square.position
+          IF previousCell(occupantId) != square.position:
+              AnimateMove(mesh, from: previousCell, to: square.position)
+          IF occupantType == "King": ensure crown ring (promotion = add ring)
+      FOR each id in meshesById NOT IN seen:      # captured pieces
+          AnimateCapture(meshesById[id])  -> fade/scale out -> dispose -> REMOVE
+      tint selected square + legal targets from `selected`
+      # previousCell kept in a Map<pieceId, Position> written on every pass.
+
+  Function AnimateMove(mesh, from, to, path) RETURNS void
+      # Babylon Animation on mesh.position, 220 ms, sine ease.
+      # MULTI-CAPTURE: walk path[] step by step (each hop = one segment) so
+      # the animation replays what the server recorded - never teleport.
+      # Queue segments: AnimationGroup or a promise chain; ApplyState during
+      # an animation must not fight it -> if a new state arrives, stop the
+      # group and snap to the authoritative cell first.
+
+  Function AnimateCapture(mesh) RETURNS void
+      # 180 ms: scale to 0 + lift slightly, then dispose + forget the id.
+
+  STALENESS (rule R4): state.turn is the guard. A response older than the
+  rendered turn is dropped, so a late refetch can never rewind an animation.
+
+  PROMOTION: server already applied it (man reached last row ENDED there);
+  the scene just reflects occupantType by adding the ring - no client rule.
+
+--------------------------------------------------------------------
+3. FLOWS (identical to 2D file section 6 - only the visual differs)
+--------------------------------------------------------------------
+  (a) START    : health gate -> createGame -> Refresh -> ApplyState(first paint)
+  (b) MOVE     : click tile -> select (ring + target tints)
+                 click target -> POST /moves -> refresh on 200
+                     -> ApplyState -> AnimateMove (path hops) -> captures fade
+                 409 -> toast, store untouched, board snaps to nothing (no
+                     animation was started, because we animate AFTER refresh)
+  (c) TERMINAL : status != Ongoing -> detach camera control, dim the board,
+                 HUD shows winner; New game -> dispose view, rebuild (rule R5)
+  (d) VIEW SWAP: App keeps view: "2d" | "3d". Swapping unmounts one canvas and
+                 mounts the other - the STORE IS NOT RESET (same game, same
+                 history), each view rebuilds its meshes from state on mount.
+
+--------------------------------------------------------------------
+4. WORKED EXAMPLE - the seam in one call
+--------------------------------------------------------------------
+  App (view = "3d")
+    -> <BoardCanvas3d state={store.state} selected={store.selected}
+                      onCellPicked={store.selectSquare} />
+    -> createBoardScene3d(canvas, onCellPicked)
+         returns handle { scene, applyState, dispose }
+    -> effect [state, selected] -> handle.applyState(state, selected)
+         reconcile -> animate -> tint
+  Nothing above the components knows whether the pixels are flat or solid.
+
+--------------------------------------------------------------------
+5. SCAFFOLD MAP (what exists now vs what is TODO)
+--------------------------------------------------------------------
+  API_WIRING_PSEUDOCODE_3D.txt   DONE   - this file
+  src/board3d/boardScene3d.ts    SKELETON - engine/scene/ArcRotateCamera
+                                     (with limits)/lights/board slab/pick +
+                                     hover forwarding DONE,
+                                     TODO: buildTiles (100), piece meshes +
+                                     materials, ApplyState reconcile,
+                                     AnimateMove/AnimateCapture, shadows
+  src/components/BoardCanvas3d.tsx SKELETON - canvas + scene lifecycle +
+                                     applyState seam (same as 2D)
+  src/App.tsx                    EXTENDED - 2d/3d toggle; store unchanged
+  shared api/ state/ components/ UNCHANGED by design (that is the point)
+
+--------------------------------------------------------------------
+6. SELF-CHECK (3D done when)
+[ ] pnpm build + pnpm lint stay green
+[ ] Orbiting never goes under the board (beta limit) or loses it (radius limit)
+[ ] Every tile click resolves to the right {row,col} at any camera angle
+[ ] First paint does not animate; a game switch rebuilds cleanly (no leaks)
+[ ] A multi-capture animates hop by hop using history[].path
+[ ] Captured pieces fade and are disposed - no invisible leftovers after 200 plies
+[ ] Promotion shows as a ring appearing, driven by occupantType only
+[ ] 2D <-> 3D toggle keeps the same game and the same turn
+[ ] All API checks from the 2D file section 10 still pass unchanged

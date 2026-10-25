@@ -1,0 +1,19 @@
+# Keep the build context small: the image installs dependencies and builds
+# inside the container, so host copies of them are never needed.
+node_modules/
+dist/
+dist-ssr/
+.git/
+.gitignore
+*.log
+*.local
+
+# Local/editor noise.
+.vscode/
+.idea/
+.DS_Store
+
+# Design notes (not part of the app).
+API_WIRING_PSEUDOCODE.txt
+API_WIRING_PSEUDOCODE_3D.txt
+README.md
