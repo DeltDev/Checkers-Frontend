@@ -51,11 +51,11 @@
 }
 
 #root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
+  /* Full width: the template's fixed 1126px centred column inset the app on
+     wide windows (white page background showing down the left) while the
+     100vw game screen inside overflowed past its right edge. */
+  width: 100%;
   text-align: center;
-  border-inline: 1px solid var(--border);
   min-height: 100svh;
   display: flex;
   flex-direction: column;

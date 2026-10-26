@@ -61,7 +61,9 @@ function App() {
   };
 
   return (
-    <div style={{ width: "100vw", height: "100vh", overflow: "hidden", position: "relative", background: "#12151d" }}>
+    // 100% (not 100vw) so the stage never exceeds the root when a scrollbar
+    // is present - 100vw includes the scrollbar and causes horizontal overflow.
+    <div style={{ width: "100%", height: "100vh", overflow: "hidden", position: "relative", background: "#12151d" }}>
       {screen === "menu" ? (
         <MainMenu
           apiOnline={store.apiOnline}
