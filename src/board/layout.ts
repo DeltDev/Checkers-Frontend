@@ -1,15 +1,12 @@
 import type { Position } from "../api/types";
 
 /**
- * Cell <-> world mapping for the 2D board (pseudocode section 7).
- * 1 world unit = 1 cell. X = col, Z = row, board centred on the origin,
- * row 0 at the TOP of the screen.
+ * Cell <-> world mapping shared by the 3D board scene.
+ * 1 world unit = 1 cell. X = col, Z = row, board centred on the origin.
  */
 
 export const BOARD_SIZE = 10;
 export const CELL = 1;
-/** Board width in world units, plus a small margin for the frustum. */
-export const BOARD_EXTENT = (BOARD_SIZE * CELL) / 2;
 
 export function cellToWorld(pos: Position): { x: number; z: number } {
   return {
@@ -31,6 +28,7 @@ export function sameCell(a: Position | null, b: Position | null): boolean {
   return a !== null && b !== null && a.row === b.row && a.col === b.col;
 }
 
-// TODO(orientation): confirm which screen corner row 0 lands on once the
-// camera is in place, and whether White plays from the bottom of the screen
-// (the API gives no "flipped view" flag - the view rule belongs to the UI).
+// Orientation (confirmed with the camera in place):
+// row 0 -> z = -4.5 (far top when viewing from +Z), row 9 -> z = +4.5.
+// Backend setup: Black occupies rows 0-3 (-Z), White rows 6-9 (+Z), so
+// White plays from the bottom of the screen when the camera sits on +Z.

@@ -1,8 +1,6 @@
 import type { CSSProperties } from "react";
 import type { PlayerNames } from "../state/gameStore";
 
-type View = "2d" | "3d";
-
 interface MainMenuProps {
 
   apiOnline: boolean | null;
@@ -10,11 +8,9 @@ interface MainMenuProps {
 
   errorMessage: string | null;
   names: PlayerNames;
-  view: View;
 
   resumeGameId: string | null;
   onNamesChange: (next: PlayerNames) => void;
-  onViewChange: (next: View) => void;
   onStart: () => void;
   onResume: () => void;
 }
@@ -81,10 +77,8 @@ export function MainMenu({
   busy,
   errorMessage,
   names,
-  view,
   resumeGameId,
   onNamesChange,
-  onViewChange,
   onStart,
   onResume,
 }: MainMenuProps) {
@@ -96,7 +90,7 @@ export function MainMenu({
       <div style={card}>
         <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: 1 }}>CHECKERS</div>
         <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
-          10x10 international draughts - 2D &amp; 3D
+          10x10 international draughts
         </div>
 
         <div style={{ fontSize: 12, marginTop: 14, opacity: 0.85 }}>
@@ -132,44 +126,8 @@ export function MainMenu({
           />
         </label>
 
-        <div style={{ marginTop: 16, fontSize: 12, opacity: 0.75 }}>board view</div>
-        <div style={{ marginTop: 6 }}>
-          <button
-            type="button"
-            disabled
-            title="The 2D board is not applied to this project yet - only the 3D UI is wired"
-            onClick={() => onViewChange("2d")}
-            style={{
-              ...secondary,
-              width: "auto",
-              display: "inline-block",
-              marginTop: 0,
-              marginRight: 6,
-              padding: "6px 16px",
-              background: "#1d2433",
-              color: "#7b849b",
-              cursor: "not-allowed",
-              opacity: 0.6,
-            }}
-          >
-            2D (soon)
-          </button>
-          <button
-            type="button"
-            onClick={() => onViewChange("3d")}
-            style={{
-              ...secondary,
-              width: "auto",
-              display: "inline-block",
-              marginTop: 0,
-              padding: "6px 16px",
-              background: view === "3d" ? "#2f6feb" : "#1d2433",
-            }}
-          >
-            3D
-          </button>
-        </div>
-
+        {/* SFX: uiClick - short UI click for every button in this menu
+            (New game, Continue game). */}
         <button type="button" style={button} disabled={busy} onClick={onStart}>
           {busy ? "starting..." : "New game"}
         </button>

@@ -69,6 +69,9 @@ export function useGameStore(): GameStore & GameStoreActions {
   const refresh = useCallback(async (gameId: string): Promise<void> => {
     try {
       const state = await api.getGame(gameId);
+      // SFX: gameEnd - play the end-of-game sting the first time state.status
+      // flips from "Ongoing" to WhiteWon / BlackWon / Draw (diff against the
+      // previous state inside setStore below).
       const mover: Player | undefined = state.players.find((p) => p.color === state.turnColor);
       const moves =
         state.status === "Ongoing" && mover
@@ -113,6 +116,7 @@ export function useGameStore(): GameStore & GameStoreActions {
             gameId: created.gameId,
             state: created,
           }));
+          // SFX (optional): gameStart - a short chime once the new board exists.
 
           const url = new URL(window.location.href);
           url.searchParams.set("game", created.gameId);
@@ -169,7 +173,8 @@ export function useGameStore(): GameStore & GameStoreActions {
         setStore((p) => ({ ...p, selected: null }));
         await refresh(gameId);
       } catch (error) {
-
+        // SFX: invalid - the server rejected the move (stale or not legal
+        // after all); a short "denied" buzz.
         setStore((p) => ({ ...p, busy: false, lastError: toApiError(error) }));
       }
     },
@@ -179,7 +184,10 @@ export function useGameStore(): GameStore & GameStoreActions {
   const selectSquare = useCallback(
     (pos: Position) => {
       const s = ref.current;
-      if (!s.gameId || !s.state || s.busy || s.state.status !== "Ongoing") return;
+      if (!s.gameId || !s.state || s.busy || s.state.status !== "Ongoing") {
+        // SFX: invalid - click ignored (busy or the game already ended).
+        return;
+      }
 
       if (s.selected) {
         const target = s.legalMoves.find(
@@ -194,6 +202,8 @@ export function useGameStore(): GameStore & GameStoreActions {
       const square = s.state.squares[squareIndex(pos)];
       const ownPiece = square.occupantColor === s.state.turnColor;
       const canStart = ownPiece && s.legalMoves.some((m) => sameCell(m.from, pos));
+      // SFX: canStart -> "select" (piece picked up); otherwise -> "invalid"
+      // (dead click on an empty/enemy/unmovable square, which also deselects).
       setStore((p) => ({ ...p, selected: canStart ? pos : null }));
     },
     [playMove],
@@ -213,7 +223,7 @@ export function useGameStore(): GameStore & GameStoreActions {
         if (result.success) {
           await refresh(gameId);
         } else {
-
+          // SFX: invalid - the draw offer was refused (success === false).
           setStore((p) => ({
             ...p,
             busy: false,

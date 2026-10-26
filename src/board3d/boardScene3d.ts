@@ -39,9 +39,14 @@ export function createBoardScene3d(
   const engine = new Engine(canvas, true);
   const scene = new Scene(engine);
 
+  // POV: ArcRotateCamera sits at target + (r*cos(a)*sin(b), r*cos(b), r*sin(a)*sin(b))
+  // (Babylon 9.31 arcRotateCamera.js), so alpha = +PI/2 parks the camera on +Z.
+  // cellToWorld puts White's home rows (backend rows 6-9) at +Z and Black's
+  // (rows 0-3) at -Z, so the camera starts behind White's side - the side that
+  // must appear closest when it is White's turn.
   const camera = new ArcRotateCamera(
     "camera3d",
-    -Math.PI / 2, 
+    Math.PI / 2,
     0.9,
     14,
     Vector3.Zero(),
@@ -53,7 +58,6 @@ export function createBoardScene3d(
   camera.upperRadiusLimit = 26;
   camera.panningSensibility = 0;
   camera.wheelDeltaPercentage = 0.01;
-  camera.attachControl(canvas, true);
 
   const sky = new HemisphericLight("sky", new Vector3(0, 1, 0), scene);
   sky.intensity = 0.65;
@@ -108,7 +112,7 @@ export function createBoardScene3d(
       const { x, z } = cellToWorld(cell);
       tile.position.set(x, SURFACE_Y / 2, z);
       tile.metadata = { cell };
-      tile.material = (row + col) % 2 === 0 ? darkTileMat : lightTileMat;
+      tile.material = (row + col) % 2 === 1 ? darkTileMat : lightTileMat;
       tile.receiveShadows = true;
       tiles[squareIndex(cell)] = tile;
     }
@@ -138,7 +142,7 @@ export function createBoardScene3d(
   let tokenSeq = 0;
   let builtFor: string | null = null;
   let lastAppliedTurn = -1;
-
+  let lastTurnColor: PieceColor | null = null;
   const toWorld = (cell: Position): Vector3 => {
     const { x, z } = cellToWorld(cell);
     return new Vector3(x, SURFACE_Y, z);
@@ -203,7 +207,45 @@ export function createBoardScene3d(
       });
     });
 
+  const CAM_SWING_MS = 700;
+  let swingToken = 0;
+
+  // Which horizontal angle puts the camera behind `color`'s home rows
+  // (White -> +Z -> +PI/2, Black -> -Z -> -PI/2; see the camera comment above).
+  const sideAlpha = (color: PieceColor): number =>
+    color === "White" ? Math.PI / 2 : -Math.PI / 2;
+
+  // Rotate the camera to the side of `color`, animated over CAM_SWING_MS.
+  // applyState calls this only AFTER the piece movement finished. The alpha
+  // limits are released for the duration of the swing because ArcRotateCamera
+  // clamps camera.alpha to [lowerAlphaLimit, upperAlphaLimit] every frame -
+  // keeping them locked is what used to snap the camera instantly.
+  const swingToTurn = (color: PieceColor): void => {
+    const to = sideAlpha(color);
+    const from = camera.alpha;
+    const token = ++swingToken;
+    // SFX (optional): whoosh - short airy camera pan during the swing.
+    if (Math.abs(from - to) < 1e-4) {
+      camera.lowerAlphaLimit = to;
+      camera.upperAlphaLimit = to;
+      return;
+    }
+    camera.lowerAlphaLimit = null;
+    camera.upperAlphaLimit = null;
+    void tween(CAM_SWING_MS, (k) => {
+      if (token !== swingToken) return;
+      camera.alpha = from + (to - from) * k;
+    }).then(() => {
+      if (token !== swingToken) return;
+      camera.alpha = to;
+      camera.lowerAlphaLimit = to; // lock the orbit to this side again
+      camera.upperAlphaLimit = to;
+    });
+  };
+
   const animateMove = async (
+    // SFX: move - soft "hop" thud; play SFX_URLS.move once per hop below
+    // (once per move instead: play it right here before the loop).
     id: number,
     view: PieceView,
     points: Vector3[],
@@ -222,9 +264,15 @@ export function createBoardScene3d(
     if (activeToken.get(id) === token) activeToken.delete(id);
   };
 
-  const animateCapture = (view: PieceView): void => {
+  // Returns its completion promise so callers can wait for the capture.
+  const animateCapture = (view: PieceView): Promise<void> => {
+    // SFX: capture - sharper "take" sound (SFX_URLS.capture) as the piece
+    // shrinks away.
+    // A piece on its way out must not swallow clicks aimed at the square it
+    // is dying on (it still exists for CAPTURE_MS after the state change).
+    for (const mesh of view.meshes) mesh.isPickable = false;
     const startScale = view.root.scaling.clone();
-    void tween(CAPTURE_MS, (k) => {
+    return tween(CAPTURE_MS, (k) => {
       const s = 1 - k;
       view.root.scaling = startScale.scale(s);
       for (const mesh of view.meshes) mesh.visibility = s;
@@ -274,6 +322,8 @@ export function createBoardScene3d(
     const cell = (mesh?.metadata?.cell ?? null) as Position | null;
 
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN && cell) {
+      // SFX: select - short "piece touched" click when the player taps a
+      // square (whether it was legal is decided in gameStore.selectSquare).
       onCellPicked(cell);
       return;
     }
@@ -284,6 +334,7 @@ export function createBoardScene3d(
         if (hovered) hovered.renderOutline = false;
         hovered = next;
         if (hovered) {
+          // SFX (optional): hover - tiny tick when the pointer enters a piece.
           hovered.renderOutline = true;
           hovered.outlineColor = Color3.FromHexString("#ffd166");
           hovered.outlineWidth = 0.03;
@@ -309,6 +360,11 @@ export function createBoardScene3d(
       setHighlights(null, []);
       return;
     }
+    // SFX: gameEnd - play the end-of-game sting once when state.status first
+    // differs from "Ongoing" (WhiteWon / BlackWon / Draw).
+
+    const turnChanged = state.turnColor !== lastTurnColor ? state.turnColor : null;
+    if (turnChanged !== null) lastTurnColor = turnChanged;
 
     if (state.gameId !== builtFor) {
       clearPieces();
@@ -325,12 +381,16 @@ export function createBoardScene3d(
       }
       lastAppliedTurn = state.turn;
       setHighlights(selected, legalTargets);
+      // SFX (optional): gameStart - short chime when a fresh board is built.
+      // No piece movement to wait for, so the camera may swing immediately.
+      if (turnChanged !== null) swingToTurn(turnChanged);
       return;
     }
 
     const lastMove = state.history.length > 0 ? state.history[state.history.length - 1] : null;
     const turnAdvanced = lastMove !== null && state.turn > lastAppliedTurn;
     const seen = new Set<number>();
+    const anims: Promise<void>[] = [];
 
     for (const square of state.squares) {
       const id = square.occupantId;
@@ -347,6 +407,16 @@ export function createBoardScene3d(
       const from = view.cell;
       const to = square.position;
       view.cell = to;
+      // The pointer handler picks the MESH and reads metadata.cell off it, so
+      // the piece's own cell has to follow the piece. Without this a moved
+      // piece still reports the square it STARTED on: that square is now empty
+      // (or holds another piece), so tapping the piece looks dead and only the
+      // bare tile rim around it responds.
+      for (const mesh of view.meshes) {
+        mesh.metadata = { cell: to, pieceId: id };
+      }
+      // SFX: promote - bright chime when a piece just became a King
+      // (this runs every applyState; diff the crown state to fire it once).
       setKing(view, square.occupantType === "King");
       if (sameCell(from, to)) continue;
 
@@ -361,7 +431,7 @@ export function createBoardScene3d(
         const points = [from, ...lastMove.path, to].map(toWorld);
         const token = ++tokenSeq;
         activeToken.set(id, token);
-        void animateMove(id, view, points, token);
+        anims.push(animateMove(id, view, points, token));
       } else {
         activeToken.delete(id);
         view.root.position = toWorld(to);
@@ -372,11 +442,21 @@ export function createBoardScene3d(
       if (seen.has(id)) continue;
       pieces.delete(id);
       activeToken.delete(id);
-      animateCapture(view);
+      anims.push(animateCapture(view));
     }
 
     lastAppliedTurn = state.turn;
     setHighlights(selected, legalTargets);
+
+    if (turnChanged !== null) {
+      if (anims.length > 0) {
+        // The camera only swings AFTER the movement (all hops + captures) of
+        // this state change has finished animating.
+        void Promise.all(anims).then(() => swingToTurn(turnChanged));
+      } else {
+        swingToTurn(turnChanged);
+      }
+    }
   };
 
   return {

@@ -20,7 +20,8 @@ interface GameHudProps {
 const panel: CSSProperties = {
   position: "absolute",
   top: 16,
-  left: 16,
+  left: "50%",
+  transform: "translateX(-50%)",
   zIndex: 10,
   padding: "12px 16px",
   borderRadius: 10,
@@ -108,6 +109,8 @@ export function GameHud({
         />
       </div>
 
+      {/* SFX: uiClick - one short UI click for every button below
+          (New game, Offer draw, Resign, Menu, dismiss). */}
       <div>
         <button type="button" style={button} disabled={busy} onClick={onNewGame}>
           New game
@@ -123,6 +126,8 @@ export function GameHud({
         </button>
       </div>
 
+      {/* SFX (optional): turnChime - a soft chime when `turn` changes to the
+          other player; the camera swing is the visual counterpart. */}
       {errorMessage ? (
         <div style={{ marginTop: 8, fontSize: 13, color: "#ffb4a8" }}>
           {errorMessage}{" "}

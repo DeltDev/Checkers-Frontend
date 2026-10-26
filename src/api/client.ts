@@ -45,7 +45,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     try {
       message = (JSON.parse(text) as { message?: string }).message ?? text;
     } catch {
-      
+      // not JSON - keep the raw body as the message
     }
     throw new ApiError(response.status, message || response.statusText, text);
   }

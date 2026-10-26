@@ -7,11 +7,12 @@ interface MoveLogProps {
 
 const panel: CSSProperties = {
   position: "absolute",
-  right: 16,
-  bottom: 16,
+  top: 16,
+  left: 16,
   zIndex: 10,
   width: 240,
-  maxHeight: "45vh",
+  // 10 rows of 16px + header (16px + 6px gap) + 20px padding = 202px.
+  maxHeight: 202,
   overflowY: "auto",
   padding: "10px 12px",
   borderRadius: 10,
@@ -19,13 +20,19 @@ const panel: CSSProperties = {
   color: "#e8ecf5",
   fontFamily: "ui-monospace, monospace",
   fontSize: 13,
+  lineHeight: "16px",
+  boxSizing: "border-box",
 };
 
 
 export function MoveLog({ history }: MoveLogProps) {
   return (
+    // SFX (optional): tick - a tiny tick whenever a new notation line appears
+    // (i.e. when history.length grows after a move).
     <div style={panel}>
-      <div style={{ marginBottom: 6, opacity: 0.7 }}>moves ({history.length})</div>
+      <div style={{ marginBottom: 6, lineHeight: "16px", opacity: 0.7 }}>
+        moves ({history.length})
+      </div>
       {history.length === 0 ? (
         <div style={{ opacity: 0.6 }}>no moves yet</div>
       ) : (
