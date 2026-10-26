@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import "./App.css";
 import { BoardCanvas3d } from "./components/BoardCanvas3d";
 import { GameHud } from "./components/GameHud";
 import { MainMenu } from "./components/MainMenu";
+import { MuteButton } from "./components/MuteButton";
 import { MoveLog } from "./components/MoveLog";
+import { audio } from "./audio/audioManager";
 import { sameCell } from "./board/layout";
 import { useGameStore } from "./state/gameStore";
 import type { PlayerNames } from "./state/gameStore";
@@ -22,13 +25,14 @@ function App() {
   const [names, setNames] = useState<PlayerNames>(DEFAULT_NAMES);
 
   useEffect(() => {
+    audio.preload(); // probe + load every file in public/audio (missing ones are skipped)
     void checkHealth();
     const gameId = new URLSearchParams(window.location.search).get("game");
     if (gameId) loadGame(gameId);
   }, [checkHealth, loadGame]);
 
   const startGame = () => {
-    // BGM: fade the background music in when entering the game screen (audio.startBgm()).
+    audio.startBgm(); // fade the background music in on entering the game
     setScreen("game");
     createGame(names);
   };
@@ -40,7 +44,7 @@ function App() {
   };
 
   const exitToMenu = () => {
-    // BGM: fade the background music out when returning to the menu (audio.stopBgm()).
+    audio.stopBgm(); // fade the background music out on returning to the menu
     setScreen("menu");
     store.clearError();
   };
@@ -61,9 +65,7 @@ function App() {
   };
 
   return (
-    // 100% (not 100vw) so the stage never exceeds the root when a scrollbar
-    // is present - 100vw includes the scrollbar and causes horizontal overflow.
-    <div style={{ width: "100%", height: "100vh", overflow: "hidden", position: "relative", background: "#12151d" }}>
+    <div className="stage">
       {screen === "menu" ? (
         <MainMenu
           apiOnline={store.apiOnline}
@@ -77,46 +79,34 @@ function App() {
         />
       ) : (
         <>
-      <GameHud
-        state={store.state}
-        busy={store.busy}
-        apiOnline={store.apiOnline}
-        errorMessage={store.lastError?.message ?? null}
-        names={names}
-        onNamesChange={setNames}
-        onNewGame={() => createGame(names)}
-        onOfferDraw={store.offerDraw}
-        onResign={store.resign}
-        onExit={exitToMenu}
-        onClearError={store.clearError}
-      />
+          <div className="stage__canvas">
+            <BoardCanvas3d {...canvasProps} />
+          </div>
 
-      {store.apiOnline === false ? (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 16,
-            left: 16,
-            zIndex: 12,
-            padding: "8px 14px",
-            borderRadius: 8,
-            background: "rgba(146, 34, 34, 0.92)",
-            color: "#ffe4e4",
-            fontFamily: "system-ui, sans-serif",
-            fontSize: 13,
-          }}
-        >
-          API offline
-        </div>
-      ) : null}
+          <GameHud
+            state={store.state}
+            busy={store.busy}
+            apiOnline={store.apiOnline}
+            errorMessage={store.lastError?.message ?? null}
+            drawOffer={store.drawOffer}
+            resignation={store.resignation}
+            notice={store.notice}
+            onNewGame={() => createGame(names)}
+            onOfferDraw={store.offerDraw}
+            onAcceptDraw={store.acceptDraw}
+            onDeclineDraw={store.declineDraw}
+            onResign={store.resign}
+            onExit={exitToMenu}
+            onDismissNotice={store.dismissNotice}
+            onClearError={store.clearError}
+          />
 
-      <div style={{ position: "absolute", inset: 0 }}>
-        <BoardCanvas3d {...canvasProps} />
-      </div>
-
-      <MoveLog history={store.state?.history ?? []} />
+          <MoveLog history={store.state?.history ?? []} />
         </>
       )}
+
+      {/* Global sound toggle - above every popup on both screens. */}
+      <MuteButton />
     </div>
   );
 }

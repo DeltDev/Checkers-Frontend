@@ -1,111 +1,207 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  --bg: #070911;
+  --bg-2: #0c1020;
+  --panel: rgba(10, 13, 24, 0.92);
+  --panel-solid: #0a0d18;
+  --line: #26304a;
+  --line-bright: #3d4d75;
+  --text: #d7def0;
+  --text-dim: #8792ad;
+  --gold: #f0b429;
+  --gold-bright: #ffd766;
+  --red: #e5484d;
+  --red-bright: #ff7a7e;
+  --green: #46d17e;
+  --white-piece: #f3ece0;
+  --black-piece: #23262e;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
+  --sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --mono: Consolas, ui-monospace, "Cascadia Mono", monospace;
 
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
+  color-scheme: dark;
+  font: 16px/145% var(--sans);
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
-}
-
-#root {
-  /* Full width: the template's fixed 1126px centred column inset the app on
-     wide windows (white page background showing down the left) while the
-     100vw game screen inside overflowed past its right edge. */
-  width: 100%;
-  text-align: center;
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+* {
   box-sizing: border-box;
 }
 
 body {
   margin: 0;
+  background: radial-gradient(1200px 700px at 50% 30%, #131a30 0%, var(--bg) 70%);
+  overflow: hidden;
+  user-select: none;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
-  font-weight: 500;
-  color: var(--text-h);
+#root {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
+/* ------------------------------------------------------------------ */
+/* keyframes                                                           */
+/* ------------------------------------------------------------------ */
+
+/* Main-menu title: each letter drops in from above with a small overshoot. */
+@keyframes letter-drop {
+  0% {
+    opacity: 0;
+    transform: translateY(-90px) scale(1.4);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(8px) scale(1);
+  }
+  80% {
+    transform: translateY(-3px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
+
+/* Main-menu title: continuous gold glow breathing after the letters land. */
+@keyframes title-glow {
+  0%,
+  100% {
+    text-shadow:
+      0 0 14px rgba(240, 180, 41, 0.35),
+      0 0 44px rgba(240, 180, 41, 0.12);
+    filter: brightness(1);
+  }
+  50% {
+    text-shadow:
+      0 0 22px rgba(255, 215, 102, 0.75),
+      0 0 80px rgba(240, 180, 41, 0.35);
+    filter: brightness(1.12);
   }
 }
-p {
-  margin: 0;
+
+/* Slow sheen sweep across the title text. */
+@keyframes title-sheen {
+  0% {
+    background-position: -180% 0;
+  }
+  100% {
+    background-position: 280% 0;
+  }
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* Turn banner: slams down from the top, holds, then fades up. */
+@keyframes banner-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-46px) scale(0.92);
+  }
+  14% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.04);
+  }
+  22% {
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+/* Illegal-move / alert toast: punches in from the left. */
+@keyframes toast-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-36px) skewX(-8deg);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(4px) skewX(-8deg);
+  }
+  20% {
+    transform: translateX(0) skewX(-8deg);
+  }
+  82% {
+    opacity: 1;
+    transform: translateX(0) skewX(-8deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-18px) skewX(-8deg);
+  }
+}
+
+/* Modal backdrop dim + panel pop. */
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.86);
+  }
+  70% {
+    transform: translateY(-4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Announcement banner (resignation): snaps in wide, holds, fades. */
+@keyframes announce-in {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.55) scaleY(0.8);
+    letter-spacing: 0.9em;
+  }
+  16% {
+    opacity: 1;
+    transform: scaleX(1.04) scaleY(1.04);
+    letter-spacing: 0.22em;
+  }
+  24% {
+    transform: scale(1);
+    letter-spacing: 0.24em;
+  }
+  80% {
+    opacity: 1;
+    transform: scale(1);
+    letter-spacing: 0.24em;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.96);
+    letter-spacing: 0.3em;
+  }
+}
+
+/* Small pulsing status dot (API online / active player). */
+@keyframes dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 currentColor;
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 0 5px transparent;
+    opacity: 0.65;
+  }
 }

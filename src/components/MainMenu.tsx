@@ -1,76 +1,20 @@
 import type { CSSProperties } from "react";
 import type { PlayerNames } from "../state/gameStore";
+import { MenuCanvas3d } from "./MenuCanvas3d";
+import { audio } from "../audio/audioManager";
 
 interface MainMenuProps {
-
   apiOnline: boolean | null;
   busy: boolean;
-
   errorMessage: string | null;
   names: PlayerNames;
-
   resumeGameId: string | null;
   onNamesChange: (next: PlayerNames) => void;
   onStart: () => void;
   onResume: () => void;
 }
 
-const screen: CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  fontFamily: "system-ui, sans-serif",
-};
-
-const card: CSSProperties = {
-  width: 340,
-  padding: "28px 30px",
-  borderRadius: 14,
-  background: "rgba(15, 18, 26, 0.94)",
-  color: "#e8ecf5",
-  boxShadow: "0 18px 60px rgba(0,0,0,0.45)",
-  textAlign: "center",
-};
-
-const button: CSSProperties = {
-  width: "100%",
-  marginTop: 10,
-  padding: "10px 14px",
-  borderRadius: 8,
-  border: "1px solid #3a4660",
-  background: "#2f6feb",
-  color: "#f4f7ff",
-  fontSize: 15,
-  cursor: "pointer",
-};
-
-const secondary: CSSProperties = {
-  ...button,
-  background: "#1d2433",
-};
-
-const input: CSSProperties = {
-  width: "100%",
-  marginTop: 4,
-  padding: "7px 9px",
-  borderRadius: 7,
-  border: "1px solid #3a4660",
-  background: "#10131b",
-  color: "#e8ecf5",
-  fontSize: 14,
-  boxSizing: "border-box",
-};
-
-const label: CSSProperties = {
-  display: "block",
-  marginTop: 12,
-  fontSize: 12,
-  textAlign: "left",
-  opacity: 0.75,
-};
-
+const TITLE = "CHECKERS";
 
 export function MainMenu({
   apiOnline,
@@ -83,66 +27,95 @@ export function MainMenu({
   onResume,
 }: MainMenuProps) {
   const statusText =
-    apiOnline === null ? "checking API..." : apiOnline ? "API online" : "API offline";
+    apiOnline === null ? "checking api..." : apiOnline ? "api online" : "api offline";
+  const dotClass =
+    apiOnline === null ? "dot" : apiOnline ? "dot dot--online" : "dot dot--offline";
 
   return (
-    <div style={screen}>
-      <div style={card}>
-        <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: 1 }}>CHECKERS</div>
-        <div style={{ fontSize: 13, opacity: 0.7, marginTop: 4 }}>
-          10x10 international draughts
-        </div>
+    <div className="menu">
+      {/* 3D backdrop: board + starting position, slow orbiting camera, and
+          random-sized man/king pieces tumbling in mid-air (menuScene3d). */}
+      <MenuCanvas3d />
+      {/* Readability scrim between the scene and the menu GUI. */}
+      <div className="menu__scrim" />
+      {/* Animated title: every letter drops in (letter-drop, staggered via
+          --i), then the whole word breathes gold (title-glow) with a slow
+          sheen sweep (title-sheen). Pure CSS - no audio/engine needed. */}
+      <div className="menu__titlewrap">
+        <h1 className="menu__title" aria-label={TITLE}>
+          {TITLE.split("").map((letter, index) => (
+            <span
+              key={`${letter}-${index}`}
+              className="menu__letter"
+              style={{ "--i": index } as CSSProperties}
+            >
+              {letter}
+            </span>
+          ))}
+        </h1>
+      </div>
+      <div className="menu__subtitle">international draughts &middot; 10&times;10</div>
 
-        <div style={{ fontSize: 12, marginTop: 14, opacity: 0.85 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              marginRight: 6,
-              background: apiOnline === null ? "#8a93a6" : apiOnline ? "#4ade80" : "#f87171",
-            }}
-          />
+      <div className="menu__panel">
+        <div className="menu__status">
+          <span className={dotClass} />
           {statusText}
         </div>
 
-        <label style={label}>
-          White
-          <input
-            style={input}
-            value={names.white}
-            placeholder="Player 1"
-            onChange={(e) => onNamesChange({ ...names, white: e.target.value })}
-          />
-        </label>
-        <label style={label}>
-          Black
-          <input
-            style={input}
-            value={names.black}
-            placeholder="Player 2"
-            onChange={(e) => onNamesChange({ ...names, black: e.target.value })}
-          />
-        </label>
+        <div className="menu__names">
+          <label>
+            <span className="menu__namelabel menu__namelabel--white">
+              Player 1 &middot; White
+            </span>
+            <input
+              className="menu__nameinput"
+              value={names.white}
+              placeholder="Player 1"
+              onChange={(e) => onNamesChange({ ...names, white: e.target.value })}
+            />
+          </label>
+          <label>
+            <span className="menu__namelabel menu__namelabel--black">
+              Player 2 &middot; Black
+            </span>
+            <input
+              className="menu__nameinput"
+              value={names.black}
+              placeholder="Player 2"
+              onChange={(e) => onNamesChange({ ...names, black: e.target.value })}
+            />
+          </label>
+        </div>
 
-        {/* SFX: uiClick - short UI click for every button in this menu
-            (New game, Continue game). */}
-        <button type="button" style={button} disabled={busy} onClick={onStart}>
-          {busy ? "starting..." : "New game"}
-        </button>
-        <button
-          type="button"
-          style={{ ...secondary, opacity: resumeGameId ? 1 : 0.45 }}
-          disabled={busy || !resumeGameId}
-          onClick={onResume}
-        >
-          Continue game
-        </button>
+        {/* SFX: uiClick - one short UI click for every button in this menu. */}
+        <div className="menu__buttons">
+          <button
+            type="button"
+            className="btn btn--primary btn--wide"
+            disabled={busy}
+            onClick={() => {
+              audio.playSfx("uiClick");
+              onStart();
+            }}
+          >
+            {busy ? "starting..." : "new game"}
+          </button>
+          <button
+            type="button"
+            className="btn btn--wide"
+            disabled={busy || !resumeGameId}
+            onClick={() => {
+              audio.playSfx("uiClick");
+              onResume();
+            }}
+          >
+            continue game
+          </button>
+        </div>
 
-        {errorMessage ? (
-          <div style={{ marginTop: 12, fontSize: 13, color: "#ffb4a8" }}>{errorMessage}</div>
-        ) : null}
+        {errorMessage ? <div className="menu__error">{errorMessage}</div> : null}
+
+        <div className="menu__hint">mandatory captures &middot; max-capture rule</div>
       </div>
     </div>
   );

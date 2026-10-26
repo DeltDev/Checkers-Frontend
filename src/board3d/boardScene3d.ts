@@ -16,6 +16,7 @@ import {
 import type { AbstractMesh, Material } from "@babylonjs/core";
 import type { GameState, PieceColor, PieceType, Position } from "../api/types";
 import { BOARD_SIZE, cellToWorld, sameCell, squareIndex } from "../board/layout";
+import { audio } from "../audio/audioManager";
 
 
 export interface BoardScene3dHandle {
@@ -135,6 +136,7 @@ export function createBoardScene3d(
     meshes: Mesh[];
     crown: Mesh | null;
     cell: Position;
+    isKing: boolean;
   }
 
   const pieces = new Map<number, PieceView>();
@@ -174,7 +176,7 @@ export function createBoardScene3d(
     crown.setEnabled(type === "King");
     crown.metadata = { cell, pieceId: id };
 
-    return { root, meshes: [body, crown], crown, cell };
+    return { root, meshes: [body, crown], crown, cell, isKing: type === "King" };
   };
 
   const setKing = (view: PieceView, isKing: boolean): void => {
@@ -230,6 +232,8 @@ export function createBoardScene3d(
       camera.upperAlphaLimit = to;
       return;
     }
+    // SFX: whoosh - short airy pan during the camera swing.
+    audio.playSfx("whoosh");
     camera.lowerAlphaLimit = null;
     camera.upperAlphaLimit = null;
     void tween(CAM_SWING_MS, (k) => {
@@ -244,13 +248,13 @@ export function createBoardScene3d(
   };
 
   const animateMove = async (
-    // SFX: move - soft "hop" thud; play SFX_URLS.move once per hop below
-    // (once per move instead: play it right here before the loop).
     id: number,
     view: PieceView,
     points: Vector3[],
     token: number,
   ): Promise<void> => {
+    // SFX: move - soft "hop" thud, once per move (multi-jumps included).
+    audio.playSfx("move");
     for (let i = 1; i < points.length; i++) {
       const from = points[i - 1];
       const to = points[i];
@@ -266,8 +270,8 @@ export function createBoardScene3d(
 
   // Returns its completion promise so callers can wait for the capture.
   const animateCapture = (view: PieceView): Promise<void> => {
-    // SFX: capture - sharper "take" sound (SFX_URLS.capture) as the piece
-    // shrinks away.
+    // SFX: capture - sharper "take" sound as the piece shrinks away.
+    audio.playSfx("capture");
     // A piece on its way out must not swallow clicks aimed at the square it
     // is dying on (it still exists for CAPTURE_MS after the state change).
     for (const mesh of view.meshes) mesh.isPickable = false;
@@ -317,13 +321,20 @@ export function createBoardScene3d(
   };
 
   let hovered: AbstractMesh | null = null;
+  // StrictMode (dev) mounts -> disposes -> remounts this scene on the same
+  // canvas. engine.dispose() does not reliably detach Babylon's canvas input
+  // listeners, so the DISCARDED scene kept reporting picks - one physical
+  // click reached onCellPicked twice and played the same move twice. Ignore
+  // all pointer traffic once this handle has been disposed.
+  let disposed = false;
   scene.onPointerObservable.add((pointerInfo) => {
+    if (disposed) return;
     const mesh = pointerInfo.pickInfo?.pickedMesh;
     const cell = (mesh?.metadata?.cell ?? null) as Position | null;
 
     if (pointerInfo.type === PointerEventTypes.POINTERDOWN && cell) {
-      // SFX: select - short "piece touched" click when the player taps a
-      // square (whether it was legal is decided in gameStore.selectSquare).
+      // SFX: "select"/"invalid" is decided in gameStore.selectSquare (the
+      // scene only forwards the pick), so nothing plays here.
       onCellPicked(cell);
       return;
     }
@@ -360,8 +371,8 @@ export function createBoardScene3d(
       setHighlights(null, []);
       return;
     }
-    // SFX: gameEnd - play the end-of-game sting once when state.status first
-    // differs from "Ongoing" (WhiteWon / BlackWon / Draw).
+    // SFX: gameEnd / gameStart are played by gameStore (refresh / createGame
+    // / loadGame) - the state owner - so applyState never double-fires them.
 
     const turnChanged = state.turnColor !== lastTurnColor ? state.turnColor : null;
     if (turnChanged !== null) lastTurnColor = turnChanged;
@@ -381,7 +392,7 @@ export function createBoardScene3d(
       }
       lastAppliedTurn = state.turn;
       setHighlights(selected, legalTargets);
-      // SFX (optional): gameStart - short chime when a fresh board is built.
+      // SFX: gameStart is played by gameStore.createGame / loadGame.
       // No piece movement to wait for, so the camera may swing immediately.
       if (turnChanged !== null) swingToTurn(turnChanged);
       return;
@@ -417,7 +428,10 @@ export function createBoardScene3d(
       }
       // SFX: promote - bright chime when a piece just became a King
       // (this runs every applyState; diff the crown state to fire it once).
-      setKing(view, square.occupantType === "King");
+      const kingNow = square.occupantType === "King";
+      if (kingNow && !view.isKing) audio.playSfx("promote");
+      view.isKing = kingNow;
+      setKing(view, kingNow);
       if (sameCell(from, to)) continue;
 
       const isThisMove =
@@ -463,6 +477,7 @@ export function createBoardScene3d(
     scene,
     applyState,
     dispose: () => {
+      disposed = true;
       window.removeEventListener("resize", handleResize);
       clearPieces();
       engine.dispose();

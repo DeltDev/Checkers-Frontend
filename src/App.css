@@ -1,184 +1,725 @@
-.counter {
-  font-size: 16px;
-  padding: 5px 10px;
-  border-radius: 5px;
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 2px solid transparent;
-  transition: border-color 0.3s;
-  margin-bottom: 24px;
+/* ==========================================================================
+   CHECKERS — game UI stylesheet
+   Sections: stage, buttons, main menu, HUD (1v1), popups, move log
+   ========================================================================== */
 
-  &:hover {
-    border-color: var(--accent-border);
-  }
-  &:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 2px;
-  }
-}
+/* ---------- shared stage ------------------------------------------------ */
 
-.hero {
-  position: relative;
-
-  .base,
-  .framework,
-  .vite {
-    inset-inline: 0;
-    margin: 0 auto;
-  }
-
-  .base {
-    width: 170px;
-    position: relative;
-    z-index: 0;
-  }
-
-  .framework,
-  .vite {
-    position: absolute;
-  }
-
-  .framework {
-    z-index: 1;
-    top: 34px;
-    height: 28px;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(44deg) rotateY(39deg)
-      scale(1.4);
-  }
-
-  .vite {
-    z-index: 0;
-    top: 107px;
-    height: 26px;
-    width: auto;
-    transform: perspective(2000px) rotateZ(300deg) rotateX(40deg) rotateY(39deg)
-      scale(0.8);
-  }
-}
-
-#center {
-  display: flex;
-  flex-direction: column;
-  gap: 25px;
-  place-content: center;
-  place-items: center;
-  flex-grow: 1;
-
-  @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
-    gap: 18px;
-  }
-}
-
-#next-steps {
-  display: flex;
-  border-top: 1px solid var(--border);
-  text-align: left;
-
-  & > div {
-    flex: 1 1 0;
-    padding: 32px;
-    @media (max-width: 1024px) {
-      padding: 24px 20px;
-    }
-  }
-
-  .icon {
-    margin-bottom: 16px;
-    width: 22px;
-    height: 22px;
-  }
-
-  @media (max-width: 1024px) {
-    flex-direction: column;
-    text-align: center;
-  }
-}
-
-#docs {
-  border-right: 1px solid var(--border);
-
-  @media (max-width: 1024px) {
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-  }
-}
-
-#next-steps ul {
-  list-style: none;
-  padding: 0;
-  display: flex;
-  gap: 8px;
-  margin: 32px 0 0;
-
-  .logo {
-    height: 18px;
-  }
-
-  a {
-    color: var(--text-h);
-    font-size: 16px;
-    border-radius: 6px;
-    background: var(--social-bg);
-    display: flex;
-    padding: 6px 12px;
-    align-items: center;
-    gap: 8px;
-    text-decoration: none;
-    transition: box-shadow 0.3s;
-
-    &:hover {
-      box-shadow: var(--shadow);
-    }
-    .button-icon {
-      height: 18px;
-      width: 18px;
-    }
-  }
-
-  @media (max-width: 1024px) {
-    margin-top: 20px;
-    flex-wrap: wrap;
-    justify-content: center;
-
-    li {
-      flex: 1 1 calc(50% - 8px);
-    }
-
-    a {
-      width: 100%;
-      justify-content: center;
-      box-sizing: border-box;
-    }
-  }
-}
-
-#spacer {
-  height: 88px;
-  border-top: 1px solid var(--border);
-  @media (max-width: 1024px) {
-    height: 48px;
-  }
-}
-
-.ticks {
+.stage {
   position: relative;
   width: 100%;
+  height: 100vh;
+  overflow: hidden;
+}
 
-  &::before,
-  &::after {
-    content: '';
-    position: absolute;
-    top: -4.5px;
-    border: 5px solid transparent;
-  }
+.stage__canvas {
+  position: absolute;
+  inset: 0;
+}
 
-  &::before {
-    left: 0;
-    border-left-color: var(--border);
-  }
-  &::after {
-    right: 0;
-    border-right-color: var(--border);
-  }
+/* ---------- buttons ----------------------------------------------------- */
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  background: linear-gradient(180deg, #1c2438 0%, #121828 100%);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 10px 20px;
+  cursor: pointer;
+  clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    transform 0.08s ease,
+    box-shadow 0.15s ease;
+}
+
+.btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, #27324f 0%, #182036 100%);
+  color: var(--gold-bright);
+  box-shadow: 0 0 18px rgba(240, 180, 41, 0.18);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.btn--primary {
+  background: linear-gradient(180deg, var(--gold) 0%, #b57d0d 100%);
+  border-color: var(--gold-bright);
+  color: #171203;
+  font-size: 15px;
+  padding: 14px 30px;
+}
+
+.btn--primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--gold-bright) 0%, #cf9512 100%);
+  color: #171203;
+  box-shadow: 0 0 28px rgba(240, 180, 41, 0.45);
+}
+
+.btn--danger {
+  background: linear-gradient(180deg, #58181b 0%, #360d10 100%);
+  border-color: #8a2a2f;
+  color: var(--red-bright);
+}
+
+.btn--danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, #7a2126 0%, #4a1115 100%);
+  color: #fff;
+  box-shadow: 0 0 18px rgba(229, 72, 77, 0.35);
+}
+
+.btn--wide {
+  width: 100%;
+}
+
+/* ---------- main menu --------------------------------------------------- */
+
+.menu {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* 3D backdrop (menuScene3d): full-bleed canvas under everything, inert. */
+.menu__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  z-index: 0;
+  pointer-events: none;
+  touch-action: none;
+}
+
+/* Scrim between the scene and the GUI so text stays readable. */
+.menu__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(130% 95% at 50% 60%, rgba(6, 8, 14, 0) 0%, rgba(6, 8, 14, 0.3) 58%, rgba(6, 8, 14, 0.74) 100%),
+    linear-gradient(180deg, rgba(6, 8, 14, 0.55) 0%, rgba(6, 8, 14, 0.08) 36%, rgba(6, 8, 14, 0.6) 100%);
+}
+
+/* All menu GUI sits above the backdrop. */
+.menu > :not(.menu__bg):not(.menu__scrim) {
+  position: relative;
+  z-index: 2;
+}
+
+.menu__title {
+  display: flex;
+  margin: 0 0 2px;
+}
+
+.menu__letter {
+  font-size: clamp(52px, 9vw, 104px);
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+  color: transparent;
+  background: linear-gradient(100deg, #9c741d 0%, var(--gold) 30%, var(--gold-bright) 46%, #fffbe9 50%, var(--gold-bright) 54%, var(--gold) 70%, #9c741d 100%);
+  background-size: 260% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation:
+    letter-drop 0.62s cubic-bezier(0.22, 1.2, 0.36, 1) both,
+    title-sheen 5.5s linear infinite;
+  animation-delay: calc(var(--i) * 0.07s), 1.2s;
+  text-shadow: 0 6px 0 rgba(0, 0, 0, 0.45);
+  padding: 0 2px;
+}
+
+.menu__title:hover .menu__letter {
+  animation-play-state: running;
+}
+
+.menu__titlewrap {
+  animation: title-glow 3.4s ease-in-out 1.1s infinite;
+  border-radius: 24px;
+}
+
+.menu__subtitle {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.52em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin: 0 0 34px;
+  padding-left: 0.52em; /* balance the trailing letter-spacing */
+}
+
+.menu__panel {
+  width: min(380px, 92vw);
+  padding: 26px 30px 30px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.menu__status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+}
+
+.menu__names {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.menu__namelabel {
+  display: block;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 5px;
+}
+
+.menu__namelabel--white {
+  color: var(--white-piece);
+}
+
+.menu__namelabel--black {
+  color: #9aa3b8;
+}
+
+.menu__nameinput {
+  width: 100%;
+  padding: 9px 10px;
+  background: #05070e;
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  outline: none;
+}
+
+.menu__nameinput:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px var(--gold);
+}
+
+.menu__buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu__error {
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--red-bright);
+}
+
+.menu__hint {
+  margin-top: 22px;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* Status dot (shared: menu + HUD). */
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  color: #8a93a6;
+  background: currentColor;
+  animation: dot-pulse 1.6s ease-in-out infinite;
+}
+
+.dot--online {
+  color: var(--green);
+}
+
+.dot--offline {
+  color: var(--red);
+}
+
+/* ---------- HUD: 1v1 player panels -------------------------------------- */
+
+.hud__players {
+  position: absolute;
+  top: 18px;
+  left: 18px;
+  right: 18px;
+  z-index: 10;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none; /* only the cards themselves take clicks */
+}
+
+.player {
+  pointer-events: auto;
+  min-width: 240px;
+  padding: 12px 18px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%, 0 14px);
+  transition:
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.player--right {
+  text-align: right;
+  clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));
+}
+
+.player.is-active {
+  border-color: var(--gold);
+  box-shadow:
+    0 0 26px rgba(240, 180, 41, 0.3),
+    inset 0 0 22px rgba(240, 180, 41, 0.07);
+}
+
+.player__flag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.player--right .player__flag {
+  justify-content: flex-end;
+}
+
+.player__chip {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.player__chip--white {
+  background: radial-gradient(circle at 34% 30%, #ffffff, var(--white-piece) 55%, #b9ad97);
+}
+
+.player__chip--black {
+  background: radial-gradient(circle at 34% 30%, #565c6b, var(--black-piece) 60%, #05060a);
+}
+
+.player__name {
+  font-size: 21px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.player.is-active .player__name {
+  color: var(--gold-bright);
+}
+
+.player__meta {
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.player__vs {
+  pointer-events: none;
+  align-self: center;
+  margin-top: 26px;
+  font-size: 20px;
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.2em;
+  color: var(--line-bright);
+  text-shadow: 0 0 18px rgba(61, 77, 117, 0.8);
+}
+
+/* ---------- HUD: turn strip + action bar -------------------------------- */
+
+.hud__turnstrip {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9;
+  padding: 6px 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(12px 0, calc(100% - 12px) 0, 100% 100%, 0 100%);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.hud__turnstrip b {
+  color: var(--gold);
+  font-weight: 900;
+}
+
+.hud__actions {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  gap: 12px;
+}
+
+/* ---------- popups ------------------------------------------------------ */
+
+/* Big centered turn banner ("WHITE'S TURN"). */
+.turnbanner {
+  position: absolute;
+  top: 24%;
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  animation: banner-in 2s ease forwards;
+}
+
+.turnbanner__main {
+  font-size: clamp(34px, 5.4vw, 64px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #fff;
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.55),
+    0 0 34px rgba(240, 180, 41, 0.45);
+}
+
+.turnbanner__main--white {
+  color: var(--white-piece);
+}
+
+.turnbanner__main--black {
+  color: #aab3c8;
+}
+
+.turnbanner__sub {
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+
+/* Illegal-move / alert toast (bottom-left punch-in). */
+.toast {
+  position: absolute;
+  left: 18px;
+  bottom: 92px;
+  z-index: 22;
+  max-width: 340px;
+  padding: 12px 20px;
+  background: rgba(52, 10, 12, 0.94);
+  border: 1px solid var(--red);
+  color: var(--red-bright);
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  animation: toast-in 2.4s ease forwards;
+  box-shadow: 0 0 30px rgba(229, 72, 77, 0.3);
+  pointer-events: none;
+}
+
+/* Modal shell (result + draw offer). */
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 12, 0.62);
+  backdrop-filter: blur(3px);
+  animation: backdrop-in 0.25s ease;
+}
+
+.modal {
+  min-width: min(430px, 90vw);
+  padding: 30px 36px 32px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line-bright);
+  clip-path: polygon(22px 0, 100% 0, 100% calc(100% - 22px), calc(100% - 22px) 100%, 0 100%, 0 22px);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.7),
+    inset 0 0 60px rgba(240, 180, 41, 0.04);
+  text-align: center;
+  animation: modal-pop 0.4s cubic-bezier(0.22, 1.1, 0.36, 1);
+}
+
+/* Result modal appears one beat after a resignation announcement. */
+.modal--delayed {
+  animation:
+    modal-pop 0.4s cubic-bezier(0.22, 1.1, 0.36, 1) 1.2s both;
+}
+
+.modal__kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  padding-left: 0.5em;
+}
+
+.modal__title {
+  margin: 0;
+  font-size: clamp(30px, 4.4vw, 46px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold-bright);
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.5),
+    0 0 36px rgba(240, 180, 41, 0.4);
+}
+
+.modal__title--white {
+  color: var(--white-piece);
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.5),
+    0 0 36px rgba(243, 236, 224, 0.35);
+}
+
+.modal__title--black {
+  color: #aeb7cc;
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.6),
+    0 0 36px rgba(120, 132, 158, 0.5);
+}
+
+.modal__title--red {
+  color: var(--red-bright);
+  text-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.5),
+    0 0 36px rgba(229, 72, 77, 0.45);
+}
+
+.modal__sub {
+  margin-top: 10px;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 26px;
+}
+
+/* Resignation announcement banner. */
+.announce {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  z-index: 34;
+  transform: translateX(-50%);
+  padding: 18px 54px;
+  background: rgba(36, 8, 10, 0.95);
+  border: 1px solid var(--red);
+  clip-path: polygon(20px 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%, 0 20px);
+  animation: announce-in 2.6s ease forwards;
+  pointer-events: none;
+  box-shadow: 0 0 60px rgba(229, 72, 77, 0.4);
+}
+
+.announce__main {
+  font-size: clamp(26px, 3.6vw, 40px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--red-bright);
+  white-space: nowrap;
+}
+
+.announce__sub {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.4em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+/* Draw-offer specific modal accents. */
+.modal--draw {
+  border-color: var(--gold);
+  box-shadow:
+    0 30px 90px rgba(0, 0, 0, 0.7),
+    0 0 60px rgba(240, 180, 41, 0.22);
+}
+
+/* ---------- move log ---------------------------------------------------- */
+
+.movelog {
+  position: absolute;
+  left: 18px;
+  bottom: 22px;
+  z-index: 8;
+  width: 230px;
+  max-height: 216px; /* header (~22px) + 10 rows (17px each) + padding */
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  clip-path: polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text);
+  text-align: left;
+}
+
+.movelog__head {
+  position: sticky;
+  top: -10px;
+  margin: -2px 0 6px;
+  padding-bottom: 4px;
+  background: var(--panel-solid);
+  font-family: var(--sans);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.movelog__empty {
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.movelog__row {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.movelog__row b {
+  color: var(--gold);
+  font-weight: 700;
+}
+
+.movelog__cap {
+  color: var(--red-bright);
+}
+
+.movelog::-webkit-scrollbar {
+  width: 6px;
+}
+
+.movelog::-webkit-scrollbar-thumb {
+  background: var(--line-bright);
+}
+
+/* ---------- misc -------------------------------------------------------- */
+
+/* Global sound toggle - same corner as the api chip, above every popup. */
+.mutebtn {
+  position: absolute;
+  right: 18px;
+  bottom: 62px;
+  z-index: 40;
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  background: linear-gradient(180deg, #1c2438 0%, #121828 100%);
+  font-size: 17px;
+  line-height: 1;
+  padding: 9px 11px;
+  cursor: pointer;
+  clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  transition:
+    box-shadow 0.15s ease,
+    transform 0.08s ease,
+    opacity 0.15s ease;
+}
+
+.mutebtn:hover {
+  box-shadow: 0 0 18px rgba(240, 180, 41, 0.18);
+  transform: translateY(-1px);
+}
+
+.mutebtn:active {
+  transform: translateY(1px);
+}
+
+.mutebtn.is-muted {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
+.api-offline {
+  position: absolute;
+  right: 18px;
+  bottom: 22px;
+  z-index: 12;
+  padding: 8px 14px;
+  background: rgba(52, 10, 12, 0.92);
+  border: 1px solid var(--red);
+  color: var(--red-bright);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }

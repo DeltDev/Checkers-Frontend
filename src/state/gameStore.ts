@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/client";
 import { api } from "../api/endpoints";
-import type { GameState, Move, Player, Position } from "../api/types";
+import type { GameState, Move, PieceColor, Player, Position } from "../api/types";
 import { sameCell, squareIndex } from "../board/layout";
+import { audio } from "../audio/audioManager";
 
 
 
@@ -13,6 +14,28 @@ export interface PlayerNames {
   black: string;
 }
 
+/** A draw offer waiting for the opponent's answer (tracked client-side -
+ *  the GameState wire contract does not expose pending offers). */
+export interface DrawOffer {
+  byPlayerId: number;
+  byName: string;
+  color: PieceColor;
+}
+
+/** Who resigned, so the popup can say it (the wire contract has no
+ *  end-reason field either - only status + winnerId). */
+export interface Resignation {
+  byPlayerId: number;
+  byName: string;
+  color: PieceColor;
+}
+
+/** Transient full-width alert (illegal move, rejected draw offer, ...). */
+export interface Notice {
+  id: number;
+  text: string;
+}
+
 export interface GameStore {
   phase: StorePhase;
   gameId: string | null;
@@ -21,6 +44,10 @@ export interface GameStore {
   legalMoves: Move[];
   selected: Position | null;
   lastError: ApiError | null;
+
+  drawOffer: DrawOffer | null;
+  resignation: Resignation | null;
+  notice: Notice | null;
 
   busy: boolean;
 
@@ -37,7 +64,10 @@ export interface GameStoreActions {
   loadGame: (gameId: string) => void;
   selectSquare: (pos: Position) => void;
   offerDraw: () => void;
+  acceptDraw: () => void;
+  declineDraw: () => void;
   resign: () => void;
+  dismissNotice: () => void;
   clearError: () => void;
 }
 
@@ -48,6 +78,9 @@ const INITIAL: GameStore = {
   legalMoves: [],
   selected: null,
   lastError: null,
+  drawOffer: null,
+  resignation: null,
+  notice: null,
   busy: false,
   apiOnline: null,
 };
@@ -65,13 +98,33 @@ export function useGameStore(): GameStore & GameStoreActions {
     ref.current = store;
   }, [store]);
 
+  const noticeSeq = useRef(0);
+
+  // Synchronous re-entrancy guard for move submission: two picks arriving in
+  // the same tick both see the PRE-move store (ref.current only refreshes
+  // after React commits), so the async `busy` flag alone cannot stop a
+  // duplicate POST of the same move.
+  const moveInFlight = useRef(false);
+
+  const pushNotice = useCallback((text: string) => {
+    noticeSeq.current += 1;
+    setStore((p) => ({ ...p, notice: { id: noticeSeq.current, text } }));
+  }, []);
+
 
   const refresh = useCallback(async (gameId: string): Promise<void> => {
     try {
       const state = await api.getGame(gameId);
-      // SFX: gameEnd - play the end-of-game sting the first time state.status
-      // flips from "Ongoing" to WhiteWon / BlackWon / Draw (diff against the
-      // previous state inside setStore below).
+      // SFX: gameEnd - the end-of-game sting fires the first time the status
+      // flips from "Ongoing" to WhiteWon / BlackWon / Draw (diffed against
+      // the previous committed state, never inside the setStore updater).
+      const prev = ref.current;
+      const endedNow =
+        prev.gameId === gameId &&
+        prev.state != null &&
+        prev.state.status === "Ongoing" &&
+        state.status !== "Ongoing";
+      if (endedNow) audio.playSfx("gameEnd");
       const mover: Player | undefined = state.players.find((p) => p.color === state.turnColor);
       const moves =
         state.status === "Ongoing" && mover
@@ -116,7 +169,8 @@ export function useGameStore(): GameStore & GameStoreActions {
             gameId: created.gameId,
             state: created,
           }));
-          // SFX (optional): gameStart - a short chime once the new board exists.
+          // SFX: gameStart - a short chime once the new board exists.
+          audio.playSfx("gameStart");
 
           const url = new URL(window.location.href);
           url.searchParams.set("game", created.gameId);
@@ -131,10 +185,11 @@ export function useGameStore(): GameStore & GameStoreActions {
             lastError: apiError,
             apiOnline: apiError.status === 0 ? false : prev.apiOnline,
           }));
+          pushNotice(apiError.message);
         }
       })();
     },
-    [refresh],
+    [pushNotice, refresh],
   );
 
   const loadGame = useCallback(
@@ -149,6 +204,8 @@ export function useGameStore(): GameStore & GameStoreActions {
         selected: null,
         lastError: null,
       }));
+      // SFX: gameStart - a short chime when resuming builds a fresh board.
+      audio.playSfx("gameStart");
       void refresh(gameId);
     },
     [refresh],
@@ -158,10 +215,12 @@ export function useGameStore(): GameStore & GameStoreActions {
     async (move: Move): Promise<void> => {
       const s = ref.current;
       if (!s.gameId || !s.state) return;
+      if (moveInFlight.current) return;
       const mover = s.state.players.find((p) => p.color === s.state?.turnColor);
       if (!mover) return;
 
       const gameId = s.gameId;
+      moveInFlight.current = true;
       setStore((p) => ({ ...p, busy: true }));
       try {
         await api.makeMove(gameId, {
@@ -170,15 +229,21 @@ export function useGameStore(): GameStore & GameStoreActions {
           to: move.to,
           path: move.path.length > 0 ? move.path : null,
         });
-        setStore((p) => ({ ...p, selected: null }));
+        // A successful move also clears any pending draw offers server-side.
+        setStore((p) => ({ ...p, selected: null, drawOffer: null }));
         await refresh(gameId);
       } catch (error) {
         // SFX: invalid - the server rejected the move (stale or not legal
         // after all); a short "denied" buzz.
-        setStore((p) => ({ ...p, busy: false, lastError: toApiError(error) }));
+        audio.playSfx("invalid");
+        const apiError = toApiError(error);
+        setStore((p) => ({ ...p, busy: false, lastError: apiError }));
+        pushNotice(apiError.message);
+      } finally {
+        moveInFlight.current = false;
       }
     },
-    [refresh],
+    [pushNotice, refresh],
   );
 
   const selectSquare = useCallback(
@@ -186,8 +251,11 @@ export function useGameStore(): GameStore & GameStoreActions {
       const s = ref.current;
       if (!s.gameId || !s.state || s.busy || s.state.status !== "Ongoing") {
         // SFX: invalid - click ignored (busy or the game already ended).
+        audio.playSfx("invalid");
         return;
       }
+
+      const hadSelection = s.selected !== null;
 
       if (s.selected) {
         const target = s.legalMoves.find(
@@ -204,9 +272,19 @@ export function useGameStore(): GameStore & GameStoreActions {
       const canStart = ownPiece && s.legalMoves.some((m) => sameCell(m.from, pos));
       // SFX: canStart -> "select" (piece picked up); otherwise -> "invalid"
       // (dead click on an empty/enemy/unmovable square, which also deselects).
+      if (canStart) {
+        audio.playSfx("select");
+      } else {
+        audio.playSfx("invalid");
+      }
+      if (hadSelection && !canStart) {
+        // A piece was selected and this square was none of its legal
+        // targets - that is an attempted illegal move: say it out loud.
+        pushNotice("illegal move");
+      }
       setStore((p) => ({ ...p, selected: canStart ? pos : null }));
     },
-    [playMove],
+    [playMove, pushNotice],
   );
 
   const offerDraw = useCallback(() => {
@@ -222,19 +300,28 @@ export function useGameStore(): GameStore & GameStoreActions {
         const result = await api.offerDraw(gameId, { playerId: me.id });
         if (result.success) {
           await refresh(gameId);
+          if (ref.current.state?.status === "Ongoing") {
+            // Offer recorded, opponent has not answered yet - show the popup.
+            setStore((p) => ({
+              ...p,
+              drawOffer: { byPlayerId: me.id, byName: me.name, color: me.color },
+            }));
+          }
+          // "draw agreed" -> the game is already Draw; result popup takes over.
         } else {
           // SFX: invalid - the draw offer was refused (success === false).
-          setStore((p) => ({
-            ...p,
-            busy: false,
-            lastError: new ApiError(200, result.message ?? "draw offer rejected"),
-          }));
+          audio.playSfx("invalid");
+          const message = result.message ?? "draw offer rejected";
+          setStore((p) => ({ ...p, busy: false, lastError: new ApiError(200, message) }));
+          pushNotice(message);
         }
       } catch (error) {
-        setStore((p) => ({ ...p, busy: false, lastError: toApiError(error) }));
+        const apiError = toApiError(error);
+        setStore((p) => ({ ...p, busy: false, lastError: apiError }));
+        pushNotice(apiError.message);
       }
     })();
-  }, [refresh]);
+  }, [pushNotice, refresh]);
 
   const resign = useCallback(() => {
     const s = ref.current;
@@ -247,12 +334,58 @@ export function useGameStore(): GameStore & GameStoreActions {
     void (async () => {
       try {
         await api.resign(gameId, { playerId: me.id });
+        // Record who resigned BEFORE refresh - the wire contract only says
+        // "WhiteWon/BlackWon", never that it was a resignation.
+        setStore((p) => ({
+          ...p,
+          resignation: { byPlayerId: me.id, byName: me.name, color: me.color },
+        }));
         await refresh(gameId);
       } catch (error) {
-        setStore((p) => ({ ...p, busy: false, lastError: toApiError(error) }));
+        const apiError = toApiError(error);
+        setStore((p) => ({ ...p, busy: false, lastError: apiError }));
+        pushNotice(apiError.message);
       }
     })();
-  }, [refresh]);
+  }, [pushNotice, refresh]);
+
+  const acceptDraw = useCallback(() => {
+    const s = ref.current;
+    const offer = s.drawOffer;
+    if (!s.gameId || !s.state || s.busy || s.state.status !== "Ongoing" || !offer) return;
+
+    // The responder is the player who did NOT make the offer.
+    const responder = s.state.players.find((p) => p.id !== offer.byPlayerId);
+    if (!responder) return;
+
+    const gameId = s.gameId;
+    setStore((p) => ({ ...p, busy: true }));
+    void (async () => {
+      try {
+        // Accepting = the opponent also offering a draw: two offers -> Draw.
+        const result = await api.offerDraw(gameId, { playerId: responder.id });
+        setStore((p) => ({ ...p, drawOffer: null }));
+        if (!result.success) {
+          pushNotice(result.message ?? "draw offer rejected");
+        }
+        await refresh(gameId);
+      } catch (error) {
+        const apiError = toApiError(error);
+        setStore((p) => ({ ...p, busy: false, lastError: apiError }));
+        pushNotice(apiError.message);
+      }
+    })();
+  }, [pushNotice, refresh]);
+
+  const declineDraw = useCallback(() => {
+    // Local-only: the backend has no "reject" call - a pending offer is
+    // cleared by the next move, so declining just dismisses the popup.
+    setStore((p) => ({ ...p, drawOffer: null }));
+  }, []);
+
+  const dismissNotice = useCallback(() => {
+    setStore((p) => ({ ...p, notice: null }));
+  }, []);
 
   const clearError = useCallback(() => {
     setStore((p) => ({ ...p, lastError: null }));
@@ -292,7 +425,10 @@ export function useGameStore(): GameStore & GameStoreActions {
     loadGame,
     selectSquare,
     offerDraw,
+    acceptDraw,
+    declineDraw,
     resign,
+    dismissNotice,
     clearError,
   };
 }

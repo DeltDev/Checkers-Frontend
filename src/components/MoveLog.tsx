@@ -1,45 +1,36 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef } from "react";
 import type { Move } from "../api/types";
+import { audio } from "../audio/audioManager";
 
 interface MoveLogProps {
   history: Move[];
 }
 
-const panel: CSSProperties = {
-  position: "absolute",
-  top: 16,
-  left: 16,
-  zIndex: 10,
-  width: 240,
-  // 10 rows of 16px + header (16px + 6px gap) + 20px padding = 202px.
-  maxHeight: 202,
-  overflowY: "auto",
-  padding: "10px 12px",
-  borderRadius: 10,
-  background: "rgba(15, 18, 26, 0.86)",
-  color: "#e8ecf5",
-  fontFamily: "ui-monospace, monospace",
-  fontSize: 13,
-  lineHeight: "16px",
-  boxSizing: "border-box",
-};
-
-
+/**
+ * Notation history, bottom-left of the stage, scrollable. The CSS caps the
+ * panel at roughly 10 rows (max-height), so older moves scroll out of view.
+ */
 export function MoveLog({ history }: MoveLogProps) {
+  // SFX: tick - a tiny tick whenever a new notation line appears
+  // (i.e. when history.length grows after a move).
+  const prevCount = useRef(history.length);
+  useEffect(() => {
+    if (history.length > prevCount.current) audio.playSfx("tick");
+    prevCount.current = history.length;
+  }, [history.length]);
+
   return (
-    // SFX (optional): tick - a tiny tick whenever a new notation line appears
-    // (i.e. when history.length grows after a move).
-    <div style={panel}>
-      <div style={{ marginBottom: 6, lineHeight: "16px", opacity: 0.7 }}>
-        moves ({history.length})
-      </div>
+    <div className="movelog">
+      <div className="movelog__head">move log ({history.length})</div>
       {history.length === 0 ? (
-        <div style={{ opacity: 0.6 }}>no moves yet</div>
+        <div className="movelog__empty">no moves yet</div>
       ) : (
         history.map((move, index) => (
-          <div key={`${index}-${move.notation}`}>
-            {index + 1}. {move.notation}
-            {move.type === "Capture" ? ` (x${move.capturedPieceIds.length})` : ""}
+          <div key={`${index}-${move.notation}`} className="movelog__row">
+            <b>{index + 1}.</b> {move.notation}
+            {move.type === "Capture" ? (
+              <span className="movelog__cap"> (x{move.capturedPieceIds.length})</span>
+            ) : null}
           </div>
         ))
       )}
