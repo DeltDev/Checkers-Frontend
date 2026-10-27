@@ -17,6 +17,7 @@ import type { AbstractMesh, Material } from "@babylonjs/core";
 import type { GameState, PieceColor, PieceType, Position } from "../api/types";
 import { BOARD_SIZE, cellToWorld, sameCell, squareIndex } from "../board/layout";
 import { audio } from "../audio/audioManager";
+import { createBoardVfx } from "./boardVfx";
 
 
 export interface BoardScene3dHandle {
@@ -130,6 +131,9 @@ export function createBoardScene3d(
 
   const targetOverlay = makeOverlay("hlTarget", 0.6, SURFACE_Y + 0.006, targetMat);
   const selectOverlay = makeOverlay("hlSelect", 0.96, SURFACE_Y + 0.008, selectMat);
+
+  // Particle VFX for quiet moves / captures / promotions (boardVfx).
+  const vfx = createBoardVfx(scene);
 
   interface PieceView {
     root: TransformNode;
@@ -265,6 +269,8 @@ export function createBoardScene3d(
       if (activeToken.get(id) !== token) return;
     }
     view.root.position = points[points.length - 1];
+    // VFX: dust puff kicked up where the piece lands (end of a quiet move).
+    vfx.landingPuff(view.root.position);
     if (activeToken.get(id) === token) activeToken.delete(id);
   };
 
@@ -272,6 +278,8 @@ export function createBoardScene3d(
   const animateCapture = (view: PieceView): Promise<void> => {
     // SFX: capture - sharper "take" sound as the piece shrinks away.
     audio.playSfx("capture");
+    // VFX: hot spark burst at the square the captured piece is taken from.
+    vfx.captureBurst(view.root.position);
     // A piece on its way out must not swallow clicks aimed at the square it
     // is dying on (it still exists for CAPTURE_MS after the state change).
     for (const mesh of view.meshes) mesh.isPickable = false;
@@ -429,7 +437,11 @@ export function createBoardScene3d(
       // SFX: promote - bright chime when a piece just became a King
       // (this runs every applyState; diff the crown state to fire it once).
       const kingNow = square.occupantType === "King";
-      if (kingNow && !view.isKing) audio.playSfx("promote");
+      if (kingNow && !view.isKing) {
+        audio.playSfx("promote");
+        // VFX: gold motes rising around the promotion square.
+        vfx.promoteFlash(toWorld(square.position));
+      }
       view.isKing = kingNow;
       setKing(view, kingNow);
       if (sameCell(from, to)) continue;
@@ -479,6 +491,7 @@ export function createBoardScene3d(
     dispose: () => {
       disposed = true;
       window.removeEventListener("resize", handleResize);
+      vfx.dispose();
       clearPieces();
       engine.dispose();
       scene.dispose();
